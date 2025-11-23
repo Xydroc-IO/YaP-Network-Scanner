@@ -10,18 +10,42 @@ A modern, cross-platform desktop application to discover and configure devices o
 
 ## Features
 
+### Network Scanning
 - **Network Discovery**: Automatically scan your network to find all connected devices
 - **Device Information**: View IP address, MAC address, hostname, vendor, and open ports for each device
 - **Device Configuration**: Save custom names and notes for devices
-- **Port Scanning**: Detect open ports on discovered devices
-- **Nmap Integration**: Automatically uses nmap for large port ranges (>1000 ports) for faster, more reliable scanning
+- **Port Scanning**: Detect open ports on discovered devices using multi-threaded scanning
 - **Custom Port Ranges**: Specify exact ports or port ranges to scan (e.g., `80,443,8080-8090` or `1-50000`)
 - **Auto-Detection**: Automatically detect your local network
 - **Device Persistence**: Save device configurations for easy recall
 - **Device Labeling**: Add custom labels to devices for easy identification
+- **Nmap Integration**: Dedicated Nmap tab for advanced network scanning with root privilege support
+
+### Metasploit Framework Integration
+- **Metasploit Console**: Full Metasploit Framework integration with interactive console
+- **Module Management**: Search, browse, and load all Metasploit modules (exploits, payloads, auxiliary, post, encoders, nops)
+- **Module Filtering**: Filter modules by type and search by name
+- **Payload Generator**: Generate payloads with comprehensive options:
+  - Support for Windows, Linux, Android, macOS, PHP, Python, Java, PowerShell, and more
+  - Multiple output formats (exe, raw, elf, python, ps1, sh, bash, perl, ruby, lua, java, war, jsp, asp, aspx, dll, so, deb, rpm, apk, jar, and more)
+  - FUD (Fully Undetectable) encoding with multiple encoders:
+    - x86/shikata_ga_nai, x86/call4_dword_xor, x86/countdown, x86/fnstenv_mov
+    - x86/jmp_call_additive, x86/nonalpha, x86/opt_sub, x86/unicode_mixed
+    - x86/unicode_upper, x64/xor, x64/xor_dynamic, x64/zutto_dekiru
+    - cmd/powershell_base64
+  - Configurable encoding iterations (1-10)
+  - Custom output directory selection
+- **Handler Setup**: Automatically configure multi/handler for generated payloads
+- **Info Command**: Dialog-based module information lookup with JSON and Markdown options
+- **Quick Commands**: One-click access to common Metasploit commands (sessions, jobs, show options, show payloads, back, exit)
+- **Metasploit Help**: Comprehensive command reference tab with all Metasploit commands and usage examples
+- **Root Privilege Support**: Password dialog for sudo operations when needed
+
+### User Interface
 - **Modern UI**: Clean, intuitive interface with real-time scanning progress
 - **System Tray Integration**: Minimize to system tray instead of closing (Linux)
 - **Multi-Monitor Support**: Automatically opens on your primary monitor
+- **Password Dialogs**: Secure password input dialogs that appear on the same monitor as the main window
 
 ## Requirements
 
@@ -33,6 +57,10 @@ A modern, cross-platform desktop application to discover and configure devices o
 
 - Python Tkinter support
 - Network tools (ping, arp) - usually pre-installed on Linux
+- **Metasploit Framework** (optional, for Metasploit tab features):
+  - Install from: https://www.metasploit.com/
+  - Or via package manager: `sudo apt install metasploit-framework` (Debian/Ubuntu)
+  - The application will detect if Metasploit is installed and enable/disable features accordingly
 
 ## Installation
 
@@ -103,6 +131,8 @@ python3 core/network_manager.py
 
 ### Application Features
 
+#### Network Scanning Tab
+
 1. **Network Scanning**:
    - Click "Auto-Detect" to automatically detect your local network
    - Or manually enter a network in CIDR notation (e.g., `192.168.1.0/24`)
@@ -121,7 +151,7 @@ python3 core/network_manager.py
    - **Hostname**: The device's network hostname
    - **Vendor**: Device manufacturer (detected from MAC address)
    - **Status**: Online/Offline status
-   - **Open Ports**: Common ports that are open on the device
+   - **Open Ports**: Ports that are open on the device
 
 4. **Device Configuration**:
    - Select a device from the list
@@ -135,10 +165,51 @@ python3 core/network_manager.py
    - **Open in Browser**: Open the device's web interface (if available)
    - **Delete Selected**: Remove a device from the list
 
-6. **System Tray (Linux)**:
-   - Clicking the X button minimizes to system tray
-   - Right-click tray icon to show window or quit
-   - Keeps the application running in the background
+#### Metasploit Framework Tab
+
+1. **Metasploit Console**:
+   - Interactive console for executing Metasploit commands
+   - Commands execute directly via `msfconsole -q -x`
+   - View output in real-time
+
+2. **Module Management**:
+   - **Search Modules**: Search for modules by name
+   - **Load Modules**: Load all available Metasploit modules
+   - **Filter Modules**: Filter by type (exploit, auxiliary, payload, post, encoder, nop) and search text
+   - **Use Module**: Double-click or use "Use Selected" to load a module
+
+3. **Payload Generator**:
+   - **Select Payload Type**: Choose from comprehensive list of payloads
+   - **Configure LHOST/LPORT**: Set listener host and port
+   - **Select Format**: Choose output format (exe, raw, elf, python, ps1, etc.)
+   - **FUD Encoding**: Select encoder and iterations for anti-virus evasion
+   - **Output Directory**: Choose where to save generated payloads
+   - **Generate**: Create the payload with all specified options
+
+4. **Quick Commands**:
+   - **Sessions**: View active sessions
+   - **Jobs**: View and manage jobs
+   - **Info**: Open dialog to get module information
+   - **Show Options**: Display module options
+   - **Show Payloads**: Display available payloads
+   - **Back**: Exit current module context
+   - **Exit**: Exit Metasploit console
+
+5. **Handler Setup**:
+   - Automatically configure multi/handler for generated payloads
+   - Sets LHOST, LPORT, and payload type automatically
+
+#### Metasploit Help Tab
+
+- Comprehensive command reference
+- All Metasploit commands with descriptions
+- Usage examples for ranges and lists
+- Quick reference for all command categories
+
+#### System Tray (Linux)
+- Clicking the X button minimizes to system tray
+- Right-click tray icon to show window or quit
+- Keeps the application running in the background
 
 ## Configuration
 
@@ -168,7 +239,13 @@ Each device configuration contains:
 
 ### Port Scanning
 
-The application scans common ports on discovered devices:
+The application uses multi-threaded port scanning for fast and reliable results:
+- Supports custom port ranges (e.g., `1-65535`, `80,443,8080-8090`)
+- Uses threading for concurrent port checks
+- Configurable timeouts for reliable detection
+- Root privilege support for faster SYN scans (password dialog when needed)
+
+Common ports scanned:
 - 22 (SSH)
 - 23 (Telnet)
 - 80 (HTTP)
@@ -243,21 +320,33 @@ If the system tray icon doesn't appear:
 ### Missing Dependencies
 
 1. Run the dependency installer: `./installers/install-dependencies.sh`
-2. Or install manually: `pip install Pillow pystray`
+2. Or install manually: `pip install Pillow pystray psutil`
 3. Ensure python3-tk is installed via your system package manager
+
+### Metasploit Not Found
+
+If the Metasploit tab shows "Metasploit Framework not found":
+1. Install Metasploit Framework from https://www.metasploit.com/
+2. Or install via package manager:
+   - **Debian/Ubuntu**: `sudo apt install metasploit-framework`
+   - **Arch/Manjaro**: `sudo pacman -S metasploit`
+   - **Fedora**: `sudo dnf install metasploit-framework`
+3. Restart the application after installation
+4. The Metasploit tab features will be enabled automatically when detected
 
 ## Project Structure
 
 ```
 YaP-Network-Scanner/
 ├── core/
-│   ├── network_manager.py      # Main application and GUI
+│   ├── network_manager.py      # Main application and GUI (includes Metasploit integration)
 │   ├── network_scanner.py      # Network scanning functionality
 │   └── device_storage.py       # Device configuration storage
 ├── installers/
 │   └── install-dependencies.sh # Dependency installer
 ├── launchers/
 │   └── start-network-scanner.sh # Launcher script
+├── build_appimage_advanced.sh  # AppImage build script
 ├── requirements.txt            # Python dependencies
 ├── LICENSE                     # License file
 └── README.md                   # This file
@@ -305,8 +394,10 @@ Note: Tkinter is included with Python but may need to be installed separately on
 - **Network Size**: Very large networks (e.g., /8) may take a very long time to scan
 - **Firewall**: Devices behind firewalls may not respond to ping
 - **MAC Addresses**: MAC addresses are only available for devices in the ARP table
-- **Port Scanning**: Only scans common ports; full port scans are not performed
+- **Port Scanning**: Large port ranges may take time; use threading-based scanner for best results
 - **OS Detection**: Basic OS detection is not implemented
+- **Metasploit**: Requires Metasploit Framework to be installed separately for Metasploit tab features
+- **Root Privileges**: Some network operations (nmap SYN scans) may require root privileges
 
 ## License
 

