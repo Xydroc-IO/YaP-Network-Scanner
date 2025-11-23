@@ -403,13 +403,7 @@ Note: Tkinter is included with Python but may need to be installed separately on
 
 © YaP Labs
 
-## Contributing
 
-Contributions are welcome! Please feel free to submit issues or pull requests.
-
-## Support
-
-For issues, questions, or feature requests, please open an issue on the project repository.
 
 ---
 
