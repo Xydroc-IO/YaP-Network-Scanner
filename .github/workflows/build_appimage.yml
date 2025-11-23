@@ -1,0 +1,36 @@
+name: Build AppImage
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+      
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3-tk python3-pil python3-psutil wget
+          pip3 install pystray
+      
+      - name: Build AppImage
+        run: |
+          chmod +x build_appimage.sh
+          ./build_appimage.sh
+      
+      - name: Upload AppImage
+        uses: actions/upload-artifact@v3
+        with:
+          name: YaP-Network-Scanner-x86_64.AppImage
+          path: YaP-Network-Scanner-x86_64.AppImage
+
